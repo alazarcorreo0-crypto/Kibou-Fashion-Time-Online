@@ -468,7 +468,7 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
 
     <script>
-        // TUS CREDENCIALES REALES YA CONFIGURADAS
+        // TUS CREDENCIALES REALES YA CONFIGURADAS DIRECTAMENTE
         const firebaseConfig = {
             apiKey: "AIzaSyBc_morG2j34Qd6N1DqsMVTykcbQq-99SY",
             authDomain: "timer-kibou-fashion.firebaseapp.com",
@@ -764,6 +764,7 @@
             document.getElementById('emp-sueldo').value = '';
         }
 
+        // Modificación sutil para no renderizar código innecesario
         function renderListaEmpleados() {
             const contenedor = document.getElementById('lista-empleados');
             if(!contenedor) return;
