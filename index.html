@@ -9,7 +9,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     
-    <link rel="manifest" href="data:application/json;base64,ewogICJuYW1lIjogIktpYm91IEZhc2hpb24gQXNpc3RlbmNpYSIsCiAgInNob3J0X25hbWUiOiAiS2lib3UgRmFzaGlvbiIsCiAgInN0YXJ0X3VybCI6ICIuIiwKICAidXJsIjogIi4iLAogICJkaXNwbGF5IjogInN0YW5kYWxvbmUiLAogICJiYWNrZ3JvdW5kX2NvbG9yIjogIiNmZGYyZjgiLAogICJ0aGVtZV9jb2xvciI6ICIjZGIyNzc3IiwKICAgImljb25zIjogWwogICAgewogICAgICAic3JjIjogImRhdGE6aW1hZ2Uvc3ZnK3htbDt1dGY4LDxzdmcgeG1sbnM9J2h0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnJyB2aWV3Qm94PScwIDAgNTEyIDUxMic+PHJlY3Qgd2lkdGg9JzUxMicgaGVpZ2h0PSc1MTIn ryeD0nMTAwJyBmaWxsPScjZGIyNzc3Jy8+PC9zdmc+IiwKICAgICAgInNpemVzIjogIjUxMng1MTIiLAogICAgICAidHlwZSI6ICJpbWFnZS9zdmcreG1sIgogICAgfQogIF0KfQ==">
+    <link rel="manifest" href="data:application/json;base64,ewogICJuYW1lIjogIktpYm91IEZhc2hpb24gQXNpc3RlbmNpYSIsCiAgInNob3J0X25hbWUiOiAiS2lib3UgRmFzaGlvbiIsCiAgInN0YXJ0X3VybCI6ICIuIiwKICAidXJsIjogIi4iLAogICJkaXNwbGF5IjogInN0YW5kYWxvbmUiLAogICJiYWNrZ3JvdW5kX2NvbG9yIjogIiNmZGYyZjgiLAogICJ0aGVtZV9jb2xvciI6ICIjZGIyNzc3IiwKICAgImljb25zIjogWwogICAgewogICAgICAic3JjIjogImRhdGE6aW1hZ2Uvc3ZnK3htbDt1dGY4LDxzdmcgeG1sbnM9J2h0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnJyB2aWV3Qm94PScwIDAgNTEyIDUxMic+PHJlY3Qgd2lkdGg9JzUxMicgaGVpZ2h0PSc1MTIn ryeD0nMTAwJyBmaWxsPScjZGIyNzc3Jy8+PC9zdmc+IiwKICAgICAgInNpemVzIjogIjUxMng1MTIiLA     axIjg2NDAwMDAwKSArIDEpIC8gNykgKyAxOwogICAgICAgICAgICByZXR1cm4gYCR7YcOxb0luaWNpb30tVCR7U3RyaW5nKHNlbWFuYSkucGFkU3RhcnQoMiwgJzAnKX1gOwogICAgICAgIH0=">
 
     <style>
         :root {
@@ -468,6 +468,7 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
 
     <script>
+        // CONFIGURACIÓN DE TU BASE DE DATOS REAL (timer-kibou-fashion)
         const firebaseConfig = {
             apiKey: "AIzaSyBc_morG2j34Qd6N1DqsMVTykcbQq-99SY",
             authDomain: "timer-kibou-fashion.firebaseapp.com",
@@ -529,7 +530,7 @@
             });
         }
 
-        // --- SISTEMA NATIVO DE CÁMARA CORREGIDO ASÍNCRONO ---
+        // --- SISTEMA NATIVO DE CÁMARA ASÍNCRONO ---
         const cameraInput = document.getElementById('camera-input');
 
         function intentarFichaje(tipo) {
@@ -540,10 +541,10 @@
             const empleado = BD.empleados.find(e => e.id === empId);
             if (!empleado || empleado.pin !== pin) return alert("PIN incorrecto o empleado no encontrado.");
 
-            // GUARDAMOS DATOS TEMPORALES ANTES DE DETONAR LA CÁMARA
+            // Guardamos datos temporales
             ficherolSujeto = { tipo, empId, empleado, registroAbierto: null };
             
-            // ACCIÓN DIRECTA DEL USUARIO: Abre la cámara al instante sin retrasos de internet
+            // Disparar cámara instantáneamente para evitar bloqueos del navegador
             cameraInput.click();
         }
 
@@ -557,30 +558,37 @@
                 const fotoBase64 = event.target.result;
                 const { tipo, empId } = ficherolSujeto;
                 
-                // YA CON LA FOTO CAPTURADA, REVISAMOS EN SEGUNDO PLANO EL TURNO EN FIREBASE
+                // Con la foto lista, hacemos la validación rápida con Firebase
                 db.collection("registros")
                   .where("empleadoId", "==", empId)
                   .where("horaSalida", "==", null)
                   .get()
                   .then((snapshot) => {
-                      const registroAbierto = !snapshot.empty ? { id: snapshot.docs[0].id, ...snapshot.docs[0].data() } : null;
-
-                      if (tipo === 'entrada' && registroAbierto) {
+                      const tieneTurnoAbierto = !snapshot.empty;
+                      
+                      if (tipo === 'entrada' && tieneTurnoAbierto) {
                           cameraInput.value = '';
                           return alert("❌ Error: Ya tienes un turno abierto de Entrada.");
                       }
-                      if (tipo === 'salida' && !registroAbierto) {
+                      
+                      if (tipo === 'salida' && !tieneTurnoAbierto) {
                           cameraInput.value = '';
-                          return alert("❌ Error: No tienes un turno abierto de Entrada registrado.");
+                          return alert("❌ Error: No tienes ningún turno de Entrada abierto.");
                       }
-
-                      // Asignamos el registro de la nube y completamos el guardado
-                      ficherolSujeto.registroAbierto = registroAbierto;
+                      
+                      if (tipo === 'salida') {
+                          ficherolSujeto.registroAbierto = {
+                              id: snapshot.docs[0].id,
+                              ...snapshot.docs[0].data()
+                          };
+                      }
+                      
+                      // Ejecutar el guardado final
                       completarRegistroFichaje(fotoBase64);
                   })
                   .catch((err) => {
                       cameraInput.value = '';
-                      alert("Error de conexión al validar el estatus en la nube: " + err.message);
+                      alert("Error de conexión con la nube: " + err.message);
                   });
             };
             reader.readAsDataURL(file);
@@ -605,21 +613,30 @@
                     timestampSalida: null,
                     fotoSalida: null,
                     creado: Date.now()
-                }).then(() => {
+                })
+                .then(() => {
                     alert(`✅ Entrada registrada exitosamente para ${empleado.nombre}`);
+                    document.getElementById('check-pin').value = '';
+                    cameraInput.value = '';
+                })
+                .catch((error) => {
+                    alert("Error al guardar la entrada: " + error.message);
                 });
             } else {
                 db.collection("registros").doc(registroAbierto.id).update({
                     horaSalida: formatearHora(timestampSinaloa),
                     timestampSalida: timestampSinaloa.toISOString(),
                     fotoSalida: fotoBase64
-                }).then(() => {
+                })
+                .then(() => {
                     alert(`✅ Salida registrada exitosamente para ${empleado.nombre}`);
+                    document.getElementById('check-pin').value = '';
+                    cameraInput.value = '';
+                })
+                .catch((error) => {
+                    alert("Error al guardar la salida: " + error.message);
                 });
             }
-
-            document.getElementById('check-pin').value = '';
-            cameraInput.value = ''; 
         }
 
         function abrirFotoPorId(registroId, tipoFoto) {
