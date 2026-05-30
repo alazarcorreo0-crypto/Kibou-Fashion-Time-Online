@@ -468,7 +468,6 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
 
     <script>
-        // TUS CREDENCIALES REALES YA CONFIGURADAS DIRECTAMENTE
         const firebaseConfig = {
             apiKey: "AIzaSyBc_morG2j34Qd6N1DqsMVTykcbQq-99SY",
             authDomain: "timer-kibou-fashion.firebaseapp.com",
@@ -478,7 +477,6 @@
             appId: "1:551673875464:web:326bc5170475b1dae595bd"
         };
         
-        // Inicializar la conexión con tu base de datos
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
         const auth = firebase.auth();
@@ -531,6 +529,7 @@
             });
         }
 
+        // --- SISTEMA NATIVO DE CÁMARA CORREGIDO ASÍNCRONO ---
         const cameraInput = document.getElementById('camera-input');
 
         function intentarFichaje(tipo) {
@@ -541,19 +540,11 @@
             const empleado = BD.empleados.find(e => e.id === empId);
             if (!empleado || empleado.pin !== pin) return alert("PIN incorrecto o empleado no encontrado.");
 
-            db.collection("registros")
-              .where("empleadoId", "==", empId)
-              .where("horaSalida", "==", null)
-              .get()
-              .then((snapshot) => {
-                  const registroAbierto = !snapshot.empty ? { id: snapshot.docs[0].id, ...snapshot.docs[0].data() } : null;
-
-                  if (tipo === 'entrada' && registroAbierto) return alert("Ya tienes un turno abierto de Entrada.");
-                  if (tipo === 'salida' && !registroAbierto) return alert("No tienes un turno abierto de Entrada registrado.");
-
-                  ficherolSujeto = { tipo, empId, empleado, registroAbierto };
-                  cameraInput.click();
-              });
+            // GUARDAMOS DATOS TEMPORALES ANTES DE DETONAR LA CÁMARA
+            ficherolSujeto = { tipo, empId, empleado, registroAbierto: null };
+            
+            // ACCIÓN DIRECTA DEL USUARIO: Abre la cámara al instante sin retrasos de internet
+            cameraInput.click();
         }
 
         cameraInput.addEventListener('change', function(e) {
@@ -564,7 +555,33 @@
             
             reader.onload = function(event) {
                 const fotoBase64 = event.target.result;
-                completarRegistroFichaje(fotoBase64);
+                const { tipo, empId } = ficherolSujeto;
+                
+                // YA CON LA FOTO CAPTURADA, REVISAMOS EN SEGUNDO PLANO EL TURNO EN FIREBASE
+                db.collection("registros")
+                  .where("empleadoId", "==", empId)
+                  .where("horaSalida", "==", null)
+                  .get()
+                  .then((snapshot) => {
+                      const registroAbierto = !snapshot.empty ? { id: snapshot.docs[0].id, ...snapshot.docs[0].data() } : null;
+
+                      if (tipo === 'entrada' && registroAbierto) {
+                          cameraInput.value = '';
+                          return alert("❌ Error: Ya tienes un turno abierto de Entrada.");
+                      }
+                      if (tipo === 'salida' && !registroAbierto) {
+                          cameraInput.value = '';
+                          return alert("❌ Error: No tienes un turno abierto de Entrada registrado.");
+                      }
+
+                      // Asignamos el registro de la nube y completamos el guardado
+                      ficherolSujeto.registroAbierto = registroAbierto;
+                      completarRegistroFichaje(fotoBase64);
+                  })
+                  .catch((err) => {
+                      cameraInput.value = '';
+                      alert("Error de conexión al validar el estatus en la nube: " + err.message);
+                  });
             };
             reader.readAsDataURL(file);
         });
@@ -764,7 +781,6 @@
             document.getElementById('emp-sueldo').value = '';
         }
 
-        // Modificación sutil para no renderizar código innecesario
         function renderListaEmpleados() {
             const contenedor = document.getElementById('lista-empleados');
             if(!contenedor) return;
