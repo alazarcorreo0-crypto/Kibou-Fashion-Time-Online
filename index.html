@@ -503,10 +503,9 @@
         }
 
         function formatearHora(dateObj) {
-            return dateObj.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            return dateObj.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
         }
 
-        // Modificación sutil: Eliminación del bloque base64 roto del manifest original de la cabecera.
         function obtenerSemanaISO(fecha) {
             const d = new Date(Date.UTC(fecha.getFullYear(), fecha.getMonth(), fecha.getDate()));
             const diaNum = d.getUTCDay() || 7;
@@ -678,7 +677,6 @@
             document.getElementById('photo-modal-img').src = '';
         }
 
-        // Modificación sutil para no alterar flujos
         function abrirLoginAdmin() {
             document.getElementById('admin-user').value = '';
             document.getElementById('admin-pass').value = '';
@@ -884,7 +882,7 @@
             BD.registros.forEach(r => {
                 if(r.semanaISO === semana && r.timestampSalida) {
                     if(!resumen[r.empleadoId]) {
-                        resumen[r.empleadoId] = { nombre: r.empleadoNombre, totalAcumulado: 0, totalPagado: 0, totalPendiente: 0, desgloseDias: {1:0, 2:0, 3:0, 4:0, 5:0, 6:0, 7:0} };
+                        resumen[r.empleadoId] = { nombre: r.empleadoNombre, totalAcumulado: 0, totalPagado: 0, totalPendiente: 0, desgloseDias: {1:0, 2:0, 3:0, 4:0, 5:0; 6:0, 7:0} };
                     }
                     const calculo = calcularHorasYPago(r);
                     const diaNum = r.diaSemana || 1; 
@@ -1019,52 +1017,95 @@
             });
         }
 
-        // --- HISTORIAL DE CAMBIOS: FUNCIÓN EDITAR MANUAL INTEGRADA Y SANITIZADA ---
+        // --- FUNCIÓN CORREGIDA DESDE CERO: EDICIÓN COMPLETA DE FECHA Y HORAS NATIVA ---
         function editarRegistroManual(id) {
             const reg = BD.registros.find(r => r.id === id);
-            if(!reg) return;
+            if (!reg) return;
 
-            const nuevaHoraEntrada = prompt("Modificar Entrada (HH:MM:SS)", reg.horaEntrada);
-            if(nuevaHoraEntrada === null) return; 
+            // 1. EXTRAER LA FECHA Y HORAS ACTUALES DE RESPALDO (FORMATO SEGURO)
+            let entradaBase = reg.timestampEntrada ? new Date(reg.timestampEntrada) : new Date();
+            let salidaBase = reg.timestampSalida ? new Date(reg.timestampSalida) : null;
 
-            let nuevaHoraSalida = reg.horaSalida;
-            if(reg.horaSalida !== null) {
-                nuevaHoraSalida = prompt("Modificar Salida (HH:MM:SS)", reg.horaSalida);
-                if(nuevaHoraSalida === null) return;
-            }
+            // Helper para formatear un objeto Date a formato local input: "YYYY-MM-DDTHH:MM"
+            const dateToInputString = (d) => {
+                if (!d || isNaN(d.getTime())) return "";
+                // Ajuste manual de zona horaria local para rellenar los inputs correctamente
+                const offset = d.getTimezoneOffset() * 60000;
+                const localISOTime = (new Date(d.getTime() - offset)).toISOString().slice(0, 16);
+                return localISOTime;
+            };
 
-            // Usamos directamente el timestamp guardado en la nube para sacar el año-mes-día limpio sin split frágil
-            let fechaBaseISO = new Date().toISOString().split('T')[0];
-            if (reg.timestampEntrada) {
-                fechaBaseISO = reg.timestampEntrada.split('T')[0];
-            }
+            // 2. CREAR UN CONTENEDOR EN PANTALLA TEMPORAL PARA SELECCIONAR FECHAS NATIVAS
+            const modalFalso = document.createElement('div');
+            modalFalso.style = "position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.8); z-index:5000; display:flex; align-items:center; justify-content:center; padding:1rem;";
+            
+            modalFalso.innerHTML = `
+                <div class="card" style="width:100%; max-width:400px; background:white; padding:1.5rem; border-radius:12px;">
+                    <h3 style="margin-bottom:1rem; color:var(--primary-dark); font-size:1.1rem;">📝 Corregir Checada General</h3>
+                    <p style="font-size:0.85rem; margin-bottom:1rem; color:var(--text-light)">Empleado: <b>${reg.empleadoNombre}</b></p>
+                    
+                    <div class="form-group" style="margin-bottom:1rem;">
+                        <label style="display:block; font-size:0.8rem; font-weight:700; margin-bottom:4px;">FECHA Y HORA ENTRADA:</label>
+                        <input type="datetime-local" id="edit-modal-entrada" value="${dateToInputString(entradaBase)}" style="width:100%; padding:0.5rem; font-size:1rem;">
+                    </div>
+                    
+                    <div class="form-group" style="margin-bottom:1.5rem;">
+                        <label style="display:block; font-size:0.8rem; font-weight:700; margin-bottom:4px;">FECHA Y HORA SALIDA (Dejar vacío si sigue abierto):</label>
+                        <input type="datetime-local" id="edit-modal-salida" value="${salidaBase ? dateToInputString(salidaBase) : ''}" style="width:100%; padding:0.5rem; font-size:1rem;">
+                    </div>
+                    
+                    <div style="display:flex; gap:0.5rem;">
+                        <button id="edit-modal-guardar" class="btn-success" style="padding:0.6rem; font-size:0.9rem;">Aplicar Cambios</button>
+                        <button id="edit-modal-cancelar" class="btn-secondary" style="padding:0.6rem; font-size:0.9rem; width:auto;">Cancelar</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modalFalso);
 
-            let updateData = {};
+            // 3. EVENTOS DEL NUEVO PANEL DE CONTROL
+            document.getElementById('edit-modal-cancelar').onclick = () => modalFalso.remove();
 
-            if (nuevaHoraEntrada) {
-                // Creamos los strings ISO robustos de manera controlada para evitar "Invalid Date"
-                const partsEntrada = nuevaHoraEntrada.split(':');
-                if (partsEntrada.length >= 2) {
-                    updateData.horaEntrada = nuevaHoraEntrada;
-                    updateData.timestampEntrada = new Date(`${fechaBaseISO}T${nuevaHoraEntrada}`).toISOString();
+            document.getElementById('edit-modal-guardar').onclick = () => {
+                const valEntrada = document.getElementById('edit-modal-entrada').value;
+                const valSalida = document.getElementById('edit-modal-salida').value;
+
+                if (!valEntrada) {
+                    alert("La fecha de entrada no puede estar vacía.");
+                    return;
                 }
-            }
-            if (nuevaHoraSalida) {
-                const partsSalida = nuevaHoraSalida.split(':');
-                if (partsSalida.length >= 2) {
-                    updateData.horaSalida = nuevaHoraSalida;
-                    updateData.timestampSalida = new Date(`${fechaBaseISO}T${nuevaHoraSalida}`).toISOString();
-                }
-            }
 
-            // Lanzamos la actualización con respuestas estructuradas completas
-            db.collection("registros").doc(id).update(updateData)
-                .then(() => {
-                    alert("✅ Registro actualizado exitosamente en la nube.");
-                })
-                .catch((error) => {
-                    alert("❌ Error al aplicar el cambio: " + error.message);
-                });
+                // Convertir las respuestas de los calendarios a objetos de fecha reales
+                const nuevaEntradaDate = new Date(valEntrada);
+                const nuevaSalidaDate = valSalida ? new Date(valSalida) : null;
+
+                // Armar el paquete de actualización sanitizado para Firebase
+                let updateData = {
+                    fecha: formatearFecha(nuevaEntradaDate),
+                    diaSemana: nuevaEntradaDate.getDay() || 7,
+                    semanaISO: obtenerSemanaISO(nuevaEntradaDate),
+                    horaEntrada: formatearHora(nuevaEntradaDate),
+                    timestampEntrada: nuevaEntradaDate.toISOString()
+                };
+
+                if (nuevaSalidaDate) {
+                    updateData.horaSalida = formatearHora(nuevaSalidaDate);
+                    updateData.timestampSalida = nuevaSalidaDate.toISOString();
+                } else {
+                    // Si borraron el campo, lo dejamos como turno abierto de nuevo
+                    updateData.horaSalida = null;
+                    updateData.timestampSalida = null;
+                }
+
+                // Guardar directo en Cloud Firestore
+                db.collection("registros").doc(id).update(updateData)
+                    .then(() => {
+                        alert("✅ Cambios de fecha y hora aplicados con éxito.");
+                        modalFalso.remove();
+                    })
+                    .catch((error) => {
+                        alert("❌ Error al guardar en Firebase: " + error.message);
+                    });
+            };
         }
 
         function eliminarRegistro(id) {
