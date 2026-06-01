@@ -506,6 +506,7 @@
             return dateObj.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
         }
 
+        // Modificación sutil: Eliminación del bloque base64 roto del manifest original de la cabecera.
         function obtenerSemanaISO(fecha) {
             const d = new Date(Date.UTC(fecha.getFullYear(), fecha.getMonth(), fecha.getDate()));
             const diaNum = d.getUTCDay() || 7;
@@ -543,15 +544,12 @@
             cameraInput.click();
         }
 
-        // --- NUEVA FUNCIÓN MAESTRA: COMPRESIÓN DE IMÁGENES AL VUELO ---
         function comprimirYProcesarFoto(file, callback) {
             const reader = new FileReader();
             reader.onload = function(event) {
                 const img = new Image();
                 img.onload = function() {
                     const canvas = document.createElement('canvas');
-                    
-                    // Ajustamos la foto a un tamaño ligero de máximo 400 píxeles de ancho
                     const MAX_WIDTH = 400;
                     let width = img.width;
                     let height = img.height;
@@ -567,8 +565,6 @@
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(img, 0, 0, width, height);
 
-                    // Exportamos la imagen a Base64 en formato JPEG con calidad del 60%
-                    // Esto reduce el peso de 4MB a solo 30KB de forma limpia
                     const fotoComprimidaBase64 = canvas.toDataURL('image/jpeg', 0.6);
                     callback(fotoComprimidaBase64);
                 };
@@ -582,7 +578,6 @@
             
             const file = e.target.files[0];
             
-            // Pasamos la foto por el compresor antes de hacer cualquier consulta a la nube
             comprimirYProcesarFoto(file, function(fotoBase64) {
                 const { tipo, empId } = ficherolSujeto;
                 
@@ -683,6 +678,7 @@
             document.getElementById('photo-modal-img').src = '';
         }
 
+        // Modificación sutil para no alterar flujos
         function abrirLoginAdmin() {
             document.getElementById('admin-user').value = '';
             document.getElementById('admin-pass').value = '';
@@ -1023,6 +1019,7 @@
             });
         }
 
+        // --- HISTORIAL DE CAMBIOS: FUNCIÓN EDITAR MANUAL INTEGRADA Y SANITIZADA ---
         function editarRegistroManual(id) {
             const reg = BD.registros.find(r => r.id === id);
             if(!reg) return;
@@ -1033,21 +1030,41 @@
             let nuevaHoraSalida = reg.horaSalida;
             if(reg.horaSalida !== null) {
                 nuevaHoraSalida = prompt("Modificar Salida (HH:MM:SS)", reg.horaSalida);
+                if(nuevaHoraSalida === null) return;
             }
 
-            const [dia, mes, año] = reg.fecha.split('/');
+            // Usamos directamente el timestamp guardado en la nube para sacar el año-mes-día limpio sin split frágil
+            let fechaBaseISO = new Date().toISOString().split('T')[0];
+            if (reg.timestampEntrada) {
+                fechaBaseISO = reg.timestampEntrada.split('T')[0];
+            }
+
             let updateData = {};
 
             if (nuevaHoraEntrada) {
-                updateData.horaEntrada = nuevaHoraEntrada;
-                updateData.timestampEntrada = new Date(`${año}-${mes}-${dia}T${nuevaHoraEntrada}`).toISOString();
+                // Creamos los strings ISO robustos de manera controlada para evitar "Invalid Date"
+                const partsEntrada = nuevaHoraEntrada.split(':');
+                if (partsEntrada.length >= 2) {
+                    updateData.horaEntrada = nuevaHoraEntrada;
+                    updateData.timestampEntrada = new Date(`${fechaBaseISO}T${nuevaHoraEntrada}`).toISOString();
+                }
             }
             if (nuevaHoraSalida) {
-                updateData.horaSalida = nuevaHoraSalida;
-                updateData.timestampSalida = new Date(`${año}-${mes}-${dia}T${nuevaHoraSalida}`).toISOString();
+                const partsSalida = nuevaHoraSalida.split(':');
+                if (partsSalida.length >= 2) {
+                    updateData.horaSalida = nuevaHoraSalida;
+                    updateData.timestampSalida = new Date(`${fechaBaseISO}T${nuevaHoraSalida}`).toISOString();
+                }
             }
 
-            db.collection("registros").doc(id).update(updateData);
+            // Lanzamos la actualización con respuestas estructuradas completas
+            db.collection("registros").doc(id).update(updateData)
+                .then(() => {
+                    alert("✅ Registro actualizado exitosamente en la nube.");
+                })
+                .catch((error) => {
+                    alert("❌ Error al aplicar el cambio: " + error.message);
+                });
         }
 
         function eliminarRegistro(id) {
