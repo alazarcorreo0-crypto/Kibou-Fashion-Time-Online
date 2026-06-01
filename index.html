@@ -502,6 +502,7 @@
             return dateObj.toLocaleDateString('es-MX', { year: 'numeric', month: '2-digit', day: '2-digit' });
         }
 
+        // Corrección del formato a 24 horas estricto para evitar fallas con las letras "a.m./p.m." en los prompts nativos
         function formatearHora(dateObj) {
             return dateObj.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
         }
@@ -882,7 +883,7 @@
             BD.registros.forEach(r => {
                 if(r.semanaISO === semana && r.timestampSalida) {
                     if(!resumen[r.empleadoId]) {
-                        resumen[r.empleadoId] = { nombre: r.empleadoNombre, totalAcumulado: 0, totalPagado: 0, totalPendiente: 0, desgloseDias: {1:0, 2:0, 3:0, 4:0, 5:0; 6:0, 7:0} };
+                        resumen[r.empleadoId] = { nombre: r.empleadoNombre, totalAcumulado: 0, totalPagado: 0, totalPendiente: 0, desgloseDias: {1:0, 2:0, 3:0, 4:0, 5:0, 6:0, 7:0} };
                     }
                     const calculo = calcularHorasYPago(r);
                     const diaNum = r.diaSemana || 1; 
@@ -1017,25 +1018,22 @@
             });
         }
 
-        // --- FUNCIÓN CORREGIDA DESDE CERO: EDICIÓN COMPLETA DE FECHA Y HORAS NATIVA ---
+        // --- SISTEMA DEFINITIVO CON VENTANAS DE CONTROL VISUAL NATIVAS PARA EVITAR FORMATOS INVALIDOS ---
         function editarRegistroManual(id) {
             const reg = BD.registros.find(r => r.id === id);
             if (!reg) return;
 
-            // 1. EXTRAER LA FECHA Y HORAS ACTUALES DE RESPALDO (FORMATO SEGURO)
             let entradaBase = reg.timestampEntrada ? new Date(reg.timestampEntrada) : new Date();
             let salidaBase = reg.timestampSalida ? new Date(reg.timestampSalida) : null;
 
-            // Helper para formatear un objeto Date a formato local input: "YYYY-MM-DDTHH:MM"
+            // Transforma los timestamps de la nube al formato correcto que exige el calendario datetime-local del cel
             const dateToInputString = (d) => {
                 if (!d || isNaN(d.getTime())) return "";
-                // Ajuste manual de zona horaria local para rellenar los inputs correctamente
                 const offset = d.getTimezoneOffset() * 60000;
-                const localISOTime = (new Date(d.getTime() - offset)).toISOString().slice(0, 16);
-                return localISOTime;
+                return (new Date(d.getTime() - offset)).toISOString().slice(0, 16);
             };
 
-            // 2. CREAR UN CONTENEDOR EN PANTALLA TEMPORAL PARA SELECCIONAR FECHAS NATIVAS
+            // Creamos un modal flotante elegante en pantalla para controlar la edición con inputs nativos
             const modalFalso = document.createElement('div');
             modalFalso.style = "position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.8); z-index:5000; display:flex; align-items:center; justify-content:center; padding:1rem;";
             
@@ -1045,24 +1043,23 @@
                     <p style="font-size:0.85rem; margin-bottom:1rem; color:var(--text-light)">Empleado: <b>${reg.empleadoNombre}</b></p>
                     
                     <div class="form-group" style="margin-bottom:1rem;">
-                        <label style="display:block; font-size:0.8rem; font-weight:700; margin-bottom:4px;">FECHA Y HORA ENTRADA:</label>
+                        <label style="display:block; font-size:0.8rem; font-weight:700; margin-bottom:4px; color:var(--primary-dark);">CALENDARIO / RELOJ ENTRADA:</label>
                         <input type="datetime-local" id="edit-modal-entrada" value="${dateToInputString(entradaBase)}" style="width:100%; padding:0.5rem; font-size:1rem;">
                     </div>
                     
                     <div class="form-group" style="margin-bottom:1.5rem;">
-                        <label style="display:block; font-size:0.8rem; font-weight:700; margin-bottom:4px;">FECHA Y HORA SALIDA (Dejar vacío si sigue abierto):</label>
-                        <input type="datetime-local" id="edit-modal-salida" value="${salidaBase ? dateToInputString(salidaBase) : ''}" style="width:100%; padding:0.5rem; font-size:1rem;">
+                        <label style="display:block; font-size:0.8rem; font-weight:700; margin-bottom:4px; color:var(--primary-dark);">CALENDARIO / RELOJ SALIDA:</label>
+                        <input type="datetime-local" id="edit-modal-salida" value="${salidaBase ? dateToInputString(salidaBase) : ''}" style="width:100%; padding:0.5rem; font-size:1rem;" placeholder="Dejar vacío si sigue trabajando">
                     </div>
                     
                     <div style="display:flex; gap:0.5rem;">
-                        <button id="edit-modal-guardar" class="btn-success" style="padding:0.6rem; font-size:0.9rem;">Aplicar Cambios</button>
+                        <button id="edit-modal-guardar" class="btn-success" style="padding:0.6rem; font-size:0.9rem; background-color:var(--success); color:white;">Aplicar Cambios</button>
                         <button id="edit-modal-cancelar" class="btn-secondary" style="padding:0.6rem; font-size:0.9rem; width:auto;">Cancelar</button>
                     </div>
                 </div>
             `;
             document.body.appendChild(modalFalso);
 
-            // 3. EVENTOS DEL NUEVO PANEL DE CONTROL
             document.getElementById('edit-modal-cancelar').onclick = () => modalFalso.remove();
 
             document.getElementById('edit-modal-guardar').onclick = () => {
@@ -1070,15 +1067,14 @@
                 const valSalida = document.getElementById('edit-modal-salida').value;
 
                 if (!valEntrada) {
-                    alert("La fecha de entrada no puede estar vacía.");
+                    alert("La entrada no puede estar vacía.");
                     return;
                 }
 
-                // Convertir las respuestas de los calendarios a objetos de fecha reales
                 const nuevaEntradaDate = new Date(valEntrada);
                 const nuevaSalidaDate = valSalida ? new Date(valSalida) : null;
 
-                // Armar el paquete de actualización sanitizado para Firebase
+                // Armado robusto de datos con la FECHA Y HORA unificada y corregida desde el calendario nativo
                 let updateData = {
                     fecha: formatearFecha(nuevaEntradaDate),
                     diaSemana: nuevaEntradaDate.getDay() || 7,
@@ -1091,12 +1087,11 @@
                     updateData.horaSalida = formatearHora(nuevaSalidaDate);
                     updateData.timestampSalida = nuevaSalidaDate.toISOString();
                 } else {
-                    // Si borraron el campo, lo dejamos como turno abierto de nuevo
                     updateData.horaSalida = null;
                     updateData.timestampSalida = null;
                 }
 
-                // Guardar directo en Cloud Firestore
+                // Sincronización final con Cloud Firestore
                 db.collection("registros").doc(id).update(updateData)
                     .then(() => {
                         alert("✅ Cambios de fecha y hora aplicados con éxito.");
